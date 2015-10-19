@@ -15,6 +15,122 @@ var systemEndianness = (function() {
     return undefined
 })()
 
+module.exports.parseHeader = function (niftiBuffer) {
+
+    // Check Buffer
+    var buf8 = new Uint8Array(niftiBuffer);
+    var buffer = buf8.buffer;
+    var view = new DataView(buffer);
+    if (buffer.byteLength < 348) {
+        throw new Error("The buffer is not even large enough to contain the minimal header I would expect from a NIfTI file!");
+    }
+
+    // Determine Byte Order
+    var littleEndian = true;
+    var dim = new Array(8);
+    dim[0] = view.getInt16(40, littleEndian);
+    if (1 > dim[0] || dim[0] > 7) {
+        littleEndian = !littleEndian;
+        dim[0] = view.getInt16(40, littleEndian);
+    }
+    if (1 > dim[0] || dim[0] > 7) {
+        // Even if there were other /byte/ orders, we wouldn't be able to detect them using a short (16 bits, so only two bytes).
+        console.warn("dim[0] is out-of-range, we'll simply try continuing to read the file, but this will most likely fail horribly.")
+    }
+
+    // Check Header Size & Byte Order
+    var sizeof_hdr = view.getInt32(0, littleEndian);
+    if (sizeof_hdr !== 348 && (1 > dim[0] || dim[0] > 7)) {
+        littleEndian = !littleEndian;
+        dim[0] = view.getInt16(40, littleEndian);
+        sizeof_hdr = view.getInt32(0, littleEndian);
+        if (sizeof_hdr !== 348) {
+            throw new Error("I'm sorry, but I really cannot determine the byte order of the (NIfTI) file at all.")
+        }
+    } else if (sizeof_hdr < 348) {
+        throw new Error("Header of file is smaller than expected, I cannot deal with this.")
+    } else if (sizeof_hdr !== 348) {
+        console.warn("Size of NIfTI header different from what I expect, but I'll try to do my best anyway (might cause trouble).")
+    }
+    var magic = String.fromCharCode.apply(null, buf8.subarray(344, 348))
+    if (magic !== "ni1\0" && magic !== "n+1\0") {
+        throw new Error("Sorry, but this does not appear to be a NIfTI-1 file. Maybe Analyze 7.5 format? or NIfTI-2?")
+    }
+
+    // dim
+    dim.length = 1 + Math.min(7, dim[0]);
+    for(var i = 1; i < dim.length; i++) {
+        dim[i] = view.getInt16(40 + 2 * i, littleEndian);
+        if (dim[i] <= 0) {
+            console.warn("dim[0] was probably wrong or corrupt");
+            dim.length = i;
+        }
+    }
+    if (dim.length === 1) throw new Error("No valid dimensions!");
+
+
+    // pixdim
+    var pixdim = new Array(dim.length)
+    for(var i=0; i<pixdim.length; i++) {
+        pixdim[i] = view.getFloat32(76+4*i, littleEndian)
+    }
+
+    // srows
+    var srow_x = new Array(4),
+        srow_y = new Array(4),
+        srow_z = new Array(4);
+    for (var i = 0; i < 4; i++) {
+        srow_x[i] = view.getInt16(280 + 4 * i, littleEndian);
+        srow_y[i] = view.getInt16(296 + 4 * i, littleEndian);
+        srow_z[i] = view.getInt16(312 + 4 * i, littleEndian);
+    }
+
+    // Interpret Header Fields into a JSON object
+    var header = {
+        sizeof_hdr: view.getInt32(0, littleEndian),
+        dim_info: view.getInt8(39),
+        dim: dim,
+        intent_p1: view.getFloat32(56, littleEndian),
+        intent_p2: view.getFloat32(60, littleEndian),
+        intent_p3: view.getFloat32(64, littleEndian),
+        intent_code: view.getInt16(68, littleEndian),
+        datatype: decodeNIfTIDataType(view.getInt16(70, littleEndian)),
+        bitpix: view.getInt16(72, littleEndian),
+        slice_start: view.getInt16(74, littleEndian),
+        pixdim: pixdim,
+        vox_offset: view.getFloat32(108, littleEndian),
+        scl_slope: view.getFloat32(112, littleEndian),
+        scl_inter: view.getFloat32(116, littleEndian),
+        slice_end: view.getInt16(120, littleEndian),
+        slice_code: view.getInt8(122),
+        xyzt_units: decodeNIfTIUnits(view.getInt8(123)),
+        cal_max: view.getFloat32(124, littleEndian),
+        cal_min: view.getFloat32(128, littleEndian),
+        slice_duration: view.getFloat32(132, littleEndian),
+        toffset: view.getFloat32(136, littleEndian),
+        glmax: view.getFloat32(140, littleEndian),
+        glmin: view.getFloat32(144, littleEndian),
+        descrip: String.fromCharCode.apply(null, buf8.subarray(148, 228)),
+        aux_file: String.fromCharCode.apply(null, buf8.subarray(228, 252)),
+        qform_code: view.getInt16(252, littleEndian),
+        sform_code: view.getInt16(254, littleEndian),
+        quatern_b: view.getFloat32(256, littleEndian),
+        quatern_c: view.getFloat32(260, littleEndian),
+        quatern_d: view.getFloat32(264, littleEndian),
+        qoffset_x: view.getFloat32(268, littleEndian),
+        qoffset_y: view.getFloat32(272, littleEndian),
+        qoffset_z: view.getFloat32(276, littleEndian),
+        srow_x: srow_x,
+        srow_y: srow_y,
+        srow_z: srow_z,
+        intent_name: String.fromCharCode.apply(null, buf8.subarray(328, 344)),
+        magic: magic
+    };
+
+    return header;
+
+}
+
 // This expects an ArrayBuffer or (Node.js) Buffer
 module.exports.parse = function (buffer_org) {
   /////////////////////////////////////////
@@ -168,6 +284,17 @@ module.exports.parse = function (buffer_org) {
   if (sform_code > 0) {
     console.warn("sform transformation are currently ignored.")
   }
+  /*if (sform_code > 0) { // "method 3"
+    ret.space = "right-anterior-superior" // Any method for orientation (except for "method 1") uses this, apparently.
+    ret.spaceDirections = [
+      [srow[0*4 + 0],srow[1*4 + 0],srow[2*4 + 0]],
+      [srow[0*4 + 1],srow[1*4 + 1],srow[2*4 + 1]],
+      [srow[0*4 + 2],srow[1*4 + 2],srow[2*4 + 2]]]
+    ret.spaceOrigin = [srow[0*4 + 3],srow[1*4 + 3],srow[2*4 + 3]]
+  }*/
+  // TODO: Enforce that spaceDirections and so on have the correct size.
+
+  // TODO: We're still missing an awful lot of info!
 
   // Read data if it is here
   if (magic === "n+1\0") {
@@ -175,46 +302,130 @@ module.exports.parse = function (buffer_org) {
       throw new Error("Illegal vox_offset!")
     }
     ret.buffer = buffer.slice(Math.floor(vox_offset))
+    if (datatype !== 0) {
+      // TODO: It MIGHT make sense to equate DT_UNKNOWN (0) to 'block', with bitpix giving the block size in bits
+      ret.data = parseNIfTIRawData(ret.buffer, datatype, dim, {endianFlag: littleEndian})
+    }
   }
 
-
-  // add all header fields to return
-  ret.intent_p1 = intent_p1;
-  ret.intent_p2 = intent_p2;
-  ret.intent_p3 = intent_p3;
-  ret.intent_code = intent_code;
-
-  ret.datatype = datatype;
-  ret.bitpix = bitpix;
-  ret.slice_start = slice_start;
-
-  ret.pixdim = pixdim;
-
-  ret.vox_offset = vox_offset;
-  ret.scl_slope = scl_slope;
-  ret.scl_inter = scl_inter;
-  ret.slice_end = slice_end;
-  ret.slice_code = slice_code;
-  ret.xyzt_units = xyzt_units;
-  ret.cal_max = cal_max;
-  ret.cal_min = cal_min;
-  ret.slice_duration = slice_duration;
-  ret.toffset = toffset;
-
-  ret.descrip = descrip;
-  ret.aux_file = aux_file;
-
-  ret.qform_code = qform_code;
-  ret.sform_code = sform_code;
-
-  ret.quatern_b = quatern_b;
-  ret.quatern_c = quatern_c;
-  ret.quatern_d = quatern_d;
-  ret.qoffset_x = qoffset_x;
-  ret.qoffset_y = qoffset_y;
-  ret.qoffset_z = qoffset_z;
-
   return ret
+}
+
+function parseNIfTIRawData(buffer, type, dim, options) {
+  var i, arr, view, totalLen = 1, endianFlag = options.endianFlag, endianness = endianFlag ? 'little' : 'big'
+  for(i=1; i<dim.length; i++) {
+    totalLen *= dim[i]
+  }
+  if (type == 'block') {
+    // Don't do anything special, just return the slice containing all blocks.
+    return buffer.slice(0,totalLen*options.blockSize)
+  } else if (type == 'int8' || type == 'uint8' || endianness == systemEndianness) {
+    switch(type) {
+    case "int8":
+      checkSize(1)
+      return new Int8Array(buffer.slice(0,totalLen))
+    case "uint8":
+      checkSize(1)
+      return new Uint8Array(buffer.slice(0,totalLen))
+    case "int16":
+      checkSize(2)
+      return new Int16Array(buffer.slice(0,totalLen*2))
+    case "uint16":
+      checkSize(2)
+      return new Uint16Array(buffer.slice(0,totalLen*2))
+    case "int32":
+      checkSize(4)
+      return new Int32Array(buffer.slice(0,totalLen*4))
+    case "uint32":
+      checkSize(4)
+      return new Uint32Array(buffer.slice(0,totalLen*4))
+    //case "int64":
+    //  checkSize(8)
+    //  return new Int64Array(buffer.slice(0,totalLen*8))
+    //case "uint64":
+    //  checkSize(8)
+    //  return new Uint64Array(buffer.slice(0,totalLen*8))
+    case "float":
+      checkSize(4)
+      return new Float32Array(buffer.slice(0,totalLen*4))
+    case "double":
+      checkSize(8)
+      return new Float64Array(buffer.slice(0,totalLen*8))
+    default:
+      console.warn("Unsupported NIfTI type: " + type)
+      return undefined
+    }
+  } else {
+    view = new DataView(buffer)
+    switch(type) {
+    case "int8": // Note that here we do not need to check the size of the buffer, as the DataView.get methods should throw an exception if we read beyond the buffer.
+      arr = new Int8Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getInt8(i)
+      }
+      return arr
+    case "uint8":
+      arr = new Uint8Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getUint8(i)
+      }
+      return arr
+    case "int16":
+      arr = new Int16Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getInt16(i*2)
+      }
+      return arr
+    case "uint16":
+      arr = new Uint16Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getUint16(i*2)
+      }
+      return arr
+    case "int32":
+      arr = new Int32Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getInt32(i*4)
+      }
+      return arr
+    case "uint32":
+      arr = new Uint32Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getUint32(i*4)
+      }
+      return arr
+    //case "int64":
+    //  arr = new Int64Array(totalLen)
+    //  for(i=0; i<totalLen; i++) {
+    //    arr[i] = view.getInt64(i*8)
+    //  }
+    // return arr
+    //case "uint64":
+    //  arr = new Uint64Array(totalLen)
+    //  for(i=0; i<totalLen; i++) {
+    //    arr[i] = view.getUint64(i*8)
+    //  }
+    //  return arr
+    case "float":
+      arr = new Float32Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getFloat32(i*4)
+      }
+      return arr
+    case "double":
+      arr = new Float64Array(totalLen)
+      for(i=0; i<totalLen; i++) {
+        arr[i] = view.getFloat64(i*8)
+      }
+      return arr
+    default:
+      console.warn("Unsupported NRRD type: " + type)
+      return undefined
+    }
+  }
+  function checkSize(sizeOfType) {
+    if (buffer.byteLength<totalLen*sizeOfType) throw new Error("NIfTI file does not contain enough data!")
+  }
 }
 
 function decodeNIfTIDataType(datatype) {
@@ -306,4 +517,3 @@ function decodeNIfTIUnits(units) {
   }
   return (space === "" && time === "") ? undefined : [space, space, space, time]
 }
-
