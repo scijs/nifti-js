@@ -1,5 +1,7 @@
-"use strict"
-var assert = require('assert')
+(function () {
+"use strict";
+
+var assert = require('assert');
 
 /**
  * nifti
@@ -21,12 +23,12 @@ var nifti = {
         byteArr = new Uint8Array(buf);
         intArr[0] = 0x01020304;
         if (byteArr[0]==1 && byteArr[1]==2 && byteArr[2]==3 && byteArr[3]==4) {
-            return 'big'
+            return 'big';
         } else if (byteArr[0]==4 && byteArr[1]==3 && byteArr[2]==2 && byteArr[3]==1) {
-            return 'little'
+            return 'little';
         }
-        console.warn("Unrecognized system endianness!")
-        return undefined
+        console.warn("Unrecognized system endianness!");
+        return undefined;
     })(),
 
     /**
@@ -81,7 +83,7 @@ var nifti = {
         }
         if (1 > dim[0] || dim[0] > 7) {
             // Even if there were other /byte/ orders, we wouldn't be able to detect them using a short (16 bits, so only two bytes).
-            console.warn("dim[0] is out-of-range, we'll simply try continuing to read the file, but this will most likely fail horribly.")
+            console.warn("dim[0] is out-of-range, we'll simply try continuing to read the file, but this will most likely fail horribly.");
         }
 
         // Check Header Size & Byte Order
@@ -91,21 +93,21 @@ var nifti = {
             dim[0] = view.getInt16(40, littleEndian);
             sizeof_hdr = view.getInt32(0, littleEndian);
             if (sizeof_hdr !== 348) {
-                throw new Error("I'm sorry, but I really cannot determine the byte order of the (NIfTI) file at all.")
+                throw new Error("I'm sorry, but I really cannot determine the byte order of the (NIfTI) file at all.");
             }
         } else if (sizeof_hdr < 348) {
-            throw new Error("Header of file is smaller than expected, I cannot deal with this.")
+            throw new Error("Header of file is smaller than expected, I cannot deal with this.");
         } else if (sizeof_hdr !== 348) {
-            console.warn("Size of NIfTI header different from what I expect, but I'll try to do my best anyway (might cause trouble).")
+            console.warn("Size of NIfTI header different from what I expect, but I'll try to do my best anyway (might cause trouble).");
         }
 
         // store file endiannesss
         this.endianness = littleEndian ? 'little' : 'big';
 
         // magic string
-        var magic = String.fromCharCode.apply(null, buf8.subarray(344, 348))
+        var magic = String.fromCharCode.apply(null, buf8.subarray(344, 348));
         if (magic !== "ni1\0" && magic !== "n+1\0") {
-            throw new Error("Sorry, but this does not appear to be a NIfTI-1 file. Maybe Analyze 7.5 format? or NIfTI-2?")
+            throw new Error("Sorry, but this does not appear to be a NIfTI-1 file. Maybe Analyze 7.5 format? or NIfTI-2?");
         }
 
         // dim
@@ -121,16 +123,16 @@ var nifti = {
 
 
         // pixdim
-        var pixdim = new Array(dim.length)
-        for(var i=0; i<pixdim.length; i++) {
-            pixdim[i] = view.getFloat32(76+4*i, littleEndian)
+        var pixdim = new Array(dim.length);
+        for(i = 0; i < pixdim.length; i++) {
+            pixdim[i] = view.getFloat32(76+4*i, littleEndian);
         }
 
         // srows
         var srow_x = new Array(4),
             srow_y = new Array(4),
             srow_z = new Array(4);
-        for (var i = 0; i < 4; i++) {
+        for (i = 0; i < 4; i++) {
             srow_x[i] = view.getFloat32(280 + 4 * i, littleEndian);
             srow_y[i] = view.getFloat32(296 + 4 * i, littleEndian);
             srow_z[i] = view.getFloat32(312 + 4 * i, littleEndian);
@@ -189,9 +191,9 @@ var nifti = {
         var buffer = buf8.buffer;
         var body = {};
         if (header.vox_offset < 352 || header.vox_offset > buffer.byteLength) {
-            throw new Error("Illegal vox_offset!")
+            throw new Error("Illegal vox_offset!");
         }
-        body.buffer = buffer.slice(Math.floor(header.vox_offset))
+        body.buffer = buffer.slice(Math.floor(header.vox_offset));
         if (header.datatype !== 0) {
             // TODO: It MIGHT make sense to equate DT_UNKNOWN (0) to 'block', with bitpix giving the block size in bits
             body.data = this.parseNIfTIRawData(body.buffer, header.datatype, header.dim, {endianFlag: this.endianness == 'little'});
@@ -217,21 +219,21 @@ var nifti = {
 
         // Space Units
         if (header.xyzt_units) {
-            NRRD.spaceUnits = header.xyzt_units
+            NRRD.spaceUnits = header.xyzt_units;
             // Pad if necessary
             while(NRRD.spaceUnits.length < NRRD.dimension) {
-                NRRD.spaceUnits.push("")
+                NRRD.spaceUnits.push("");
             }
             NRRD.spaceUnits.length = NRRD.dimension; // Shrink if necessary
         }
 
         // Spacings, Space Dimension & Quaterns
         if (header.qform_code === 0) { // "method 1"
-            NRRD.spacings = header.pixdim.slice(1)
+            NRRD.spacings = header.pixdim.slice(1);
             while(NRRD.spacings.length < NRRD.dimension) {
-                NRRD.spacings.push(NaN)
+                NRRD.spacings.push(NaN);
             }
-            NRRD.spaceDimension = Math.min(NRRD.dimension, 3) // There might be non-3D data sets? (Although the NIfTI format does seem /heavily/ reliant on assuming a 3D space.)
+            NRRD.spaceDimension = Math.min(NRRD.dimension, 3); // There might be non-3D data sets? (Although the NIfTI format does seem /heavily/ reliant on assuming a 3D space.)
         } else if (header.qform_code > 0) { // "method 2"
             // TODO: Figure out exactly what to do with the different qform codes.
             NRRD.space = "right-anterior-superior"; // Any method for orientation (except for "method 1") uses this, apparently.
@@ -259,11 +261,11 @@ var nifti = {
             ];
             NRRD.spaceOrigin = [header.qoffset_x, header.qoffset_y, header.qoffset_z];
         } else {
-            console.warn("Invalid qform_code: " + header.qform_code + ", orientation is probably messed up.")
+            console.warn("Invalid qform_code: " + header.qform_code + ", orientation is probably messed up.");
         }
         // TODO: Here we run into trouble, because in NRRD we cannot expose two DIFFERENT (not complementary, different!) transformations. Even more frustrating is that sform transformations are actually more compatible with NRRD than the qform methods.
         if (header.sform_code > 0) {
-            console.warn("sform transformation are currently ignored.")
+            console.warn("sform transformation are currently ignored.");
         }
 
         return NRRD;
@@ -274,12 +276,12 @@ var nifti = {
      */
     parseNIfTIRawData: function (buffer, type, dim, options) {
         var i, arr, view, totalLen = 1, endianFlag = options.endianFlag, endianness = endianFlag ? 'little' : 'big';
-        for(var i = 1; i < dim.length; i++) {
+        for(i = 1; i < dim.length; i++) {
             totalLen *= dim[i];
         }
         if (type == 'block') {
             // Don't do anything special, just return the slice containing all blocks.
-            return buffer.slice(0, totalLen * options.blockSize)
+            return buffer.slice(0, totalLen * options.blockSize);
         } else if (type == 'int8' || type == 'uint8' || endianness == this.systemEndianness) {
             switch(type) {
                 case "int8":
@@ -386,7 +388,7 @@ var nifti = {
         }
 
         function checkSize(sizeOfType) {
-            if (buffer.byteLength<totalLen*sizeOfType) throw new Error("NIfTI file does not contain enough data!")
+            if (buffer.byteLength<totalLen*sizeOfType) throw new Error("NIfTI file does not contain enough data!");
         }
     },
 
@@ -439,7 +441,7 @@ var nifti = {
      * Decode NIfTIUnits
      */
     decodeNIfTIUnits: function (units) {
-        var space, time
+        var space, time;
         switch(units & 7) {
             case 0:
                 space = "";
@@ -489,3 +491,5 @@ var nifti = {
 };
 
 module.exports = nifti;
+
+}());
