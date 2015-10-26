@@ -15,10 +15,9 @@ var systemEndianness = (function() {
     return undefined
 })()
 
-// This expects an ArrayBuffer or (Node.js) Buffer
-module.exports.parse = function (buffer_org) {
-  /////////////////////////////////////////
-  // Parse header
+// Parses a NIfTI header
+module.exports.parseNIfTIHeader = parseNIfTIHeader
+function parseNIfTIHeader(buffer_org) {
   var buf8 = new Uint8Array(buffer_org)
   var buffer = buf8.buffer // Make sure we have an ArrayBuffer
   var view = new DataView(buffer)
@@ -59,7 +58,7 @@ module.exports.parse = function (buffer_org) {
     throw new Error("Sorry, but this does not appear to be a NIfTI-1 file. Maybe Analyze 7.5 format? or NIfTI-2?")
   }
   
-  // Continue reading actual header fields
+  // Read some more structured header fields
   var dim_info = view.getInt8(39)
   dim.length = 1+Math.min(7, dim[0])
   for(var i=1; i<dim.length; i++) {
@@ -71,54 +70,64 @@ module.exports.parse = function (buffer_org) {
   }
   if (dim.length === 1) throw new Error("No valid dimensions!")
   
-  var intent_p1 = view.getFloat32(56, littleEndian)
-  var intent_p2 = view.getFloat32(56, littleEndian)
-  var intent_p3 = view.getFloat32(56, littleEndian)
-  var intent_code = view.getInt16(68, littleEndian)
-  
-  var datatype = decodeNIfTIDataType(view.getInt16(70, littleEndian))
-  var bitpix = view.getInt16(72, littleEndian)
-  var slice_start = view.getInt16(74, littleEndian)
-  
   var pixdim = new Array(dim.length)
   for(var i=0; i<pixdim.length; i++) {
     pixdim[i] = view.getFloat32(76+4*i, littleEndian)
   }
-  
-  var vox_offset = view.getFloat32(108, littleEndian)
-  var scl_slope = view.getFloat32(112, littleEndian)
-  var scl_inter = view.getFloat32(116, littleEndian)
-  var slice_end = view.getInt16(120, littleEndian)
-  var slice_code = view.getInt8(122)
-  var xyzt_units = decodeNIfTIUnits(view.getInt8(123))
-  var cal_max = view.getFloat32(124, littleEndian)
-  var cal_min = view.getFloat32(128, littleEndian)
-  var slice_duration = view.getFloat32(132, littleEndian)
-  var toffset = view.getFloat32(136, littleEndian)
-  
-  var descrip = String.fromCharCode.apply(null, buf8.subarray(148, 228))
-  var aux_file = String.fromCharCode.apply(null, buf8.subarray(228, 252))
-  
-  var qform_code = view.getInt16(252, littleEndian)
-  var sform_code = view.getInt16(254, littleEndian)
-  
-  var quatern_b = view.getFloat32(256, littleEndian)
-  var quatern_c = view.getFloat32(260, littleEndian)
-  var quatern_d = view.getFloat32(264, littleEndian)
-  var qoffset_x = view.getFloat32(268, littleEndian)
-  var qoffset_y = view.getFloat32(272, littleEndian)
-  var qoffset_z = view.getFloat32(276, littleEndian)
   
   var srow = new Float32Array(12)
   for(var i=0; i<12; i++) {
     srow[i] = view.getFloat32(280+4*i, littleEndian)
   }
   
-  var intent_name = String.fromCharCode.apply(null, buf8.subarray(328, 344))
+  // Read simple header fields and build up object representing the header
+  var header = {
+    littleEndian: littleEndian,
+    
+    sizeof_hdr: sizeof_hdr,
+    dim_info: dim_info,
+    dim: dim,
+    intent_p1: view.getFloat32(56, littleEndian),
+    intent_p2: view.getFloat32(56, littleEndian),
+    intent_p3: view.getFloat32(56, littleEndian),
+    intent_code: view.getInt16(68, littleEndian),
   
-  var extension = view.getInt32(348, littleEndian) // Actually a different format, but this suffices for checking === zero
-  if (extension !== 0) {
-    console.warn("Looks like there are extensions in use in this NIfTI file, which will all be ignored!")
+    datatype: decodeNIfTIDataType(view.getInt16(70, littleEndian)),
+    bitpix: view.getInt16(72, littleEndian),
+    slice_start: view.getInt16(74, littleEndian),
+    pixdim: pixdim,
+    vox_offset: view.getFloat32(108, littleEndian),
+    
+    scl_slope: view.getFloat32(112, littleEndian),
+    scl_inter: view.getFloat32(116, littleEndian),
+    slice_end: view.getInt16(120, littleEndian),
+    slice_code: view.getInt8(122),
+    xyzt_units: decodeNIfTIUnits(view.getInt8(123)),
+    cal_max: view.getFloat32(124, littleEndian),
+    cal_min: view.getFloat32(128, littleEndian),
+    slice_duration: view.getFloat32(132, littleEndian),
+    toffset: view.getFloat32(136, littleEndian),
+  
+    descrip: String.fromCharCode.apply(null, buf8.subarray(148, 228)),
+    aux_file: String.fromCharCode.apply(null, buf8.subarray(228, 252)),
+  
+    qform_code: view.getInt16(252, littleEndian),
+    sform_code: view.getInt16(254, littleEndian),
+  
+    quatern_b: view.getFloat32(256, littleEndian),
+    quatern_c: view.getFloat32(260, littleEndian),
+    quatern_d: view.getFloat32(264, littleEndian),
+    qoffset_x: view.getFloat32(268, littleEndian),
+    qoffset_y: view.getFloat32(272, littleEndian),
+    qoffset_z: view.getFloat32(276, littleEndian),
+    
+    srow: srow,
+  
+    intent_name: String.fromCharCode.apply(null, buf8.subarray(328, 344)),
+    
+    magic: magic,
+  
+    extension: buffer.byteLength < 348+4 ? [0,0,0,0] : [view.getInt8(348), view.getInt8(349), view.getInt8(350), view.getInt8(351)]
   }
   
   // Check bitpix
@@ -126,69 +135,96 @@ module.exports.parse = function (buffer_org) {
   // "Normalize" datatype (so that rgb/complex become several normal floats rather than compound types, possibly also do something about bits)
   // Note that there is actually both an rgb datatype and an rgb intent... (My guess is that the datatype corresponds to sizes = [3,dim[0],...], while the intent might correspond to sizes = [dim[0],...,dim[5]=3].)
   
-  // Convert to NRRD-compatible structure
-  var ret = {}
-  ret.dimension = dim[0]
-  ret.type = datatype // TODO: Check that we do not feed anything incompatible?
-  ret.encoding = 'raw'
-  ret.endian = littleEndian ? 'little' : 'big'
-  ret.sizes = dim.slice(1) // Note that both NRRD and NIfTI use the convention that the fastest axis comes first!
+  return header  
+}
 
-  if (xyzt_units !== undefined) {
-    ret.spaceUnits = xyzt_units
+// Converts a NIfTI header to an NRRD-compatible structure
+function NIfTIToNRRD(niftiHeader) {
+  var ret = {}
+  ret.dimension = niftiHeader.dim[0]
+  ret.type = niftiHeader.datatype // TODO: Check that we do not feed anything incompatible?
+  ret.encoding = 'raw'
+  ret.endian = niftiHeader.littleEndian ? 'little' : 'big'
+  ret.sizes = niftiHeader.dim.slice(1) // Note that both NRRD and NIfTI use the convention that the fastest axis comes first!
+
+  if (niftiHeader.xyzt_units !== undefined) {
+    ret.spaceUnits = niftiHeader.xyzt_units
     while(ret.spaceUnits.length < ret.dimension) { // Pad if necessary
       ret.spaceUnits.push("")
     }
     ret.spaceUnits.length = ret.dimension // Shrink if necessary
   }
   
-  if (qform_code === 0) { // "method 1"
-    ret.spacings = pixdim.slice(1)
+  if (niftiHeader.qform_code === 0) { // "method 1"
+    ret.spacings = niftiHeader.pixdim.slice(1)
     while(ret.spacings.length < ret.dimension) {
       ret.spacings.push(NaN)
     }
     ret.spaceDimension = Math.min(ret.dimension, 3) // There might be non-3D data sets? (Although the NIfTI format does seem /heavily/ reliant on assuming a 3D space.)
-  } else if (qform_code > 0) { // "method 2"
+  } else if (niftiHeader.qform_code > 0) { // "method 2"
     // TODO: Figure out exactly what to do with the different qform codes.
     ret.space = "right-anterior-superior" // Any method for orientation (except for "method 1") uses this, apparently.
-    var qfac = pixdim[0] === 0.0 ? 1 : pixdim[0]
-    var a = Math.sqrt(Math.max(0.0,1.0-(quatern_b*quatern_b+quatern_c*quatern_c+quatern_d*quatern_d)))
-    var b = quatern_b
-    var c = quatern_c
-    var d = quatern_d
+    var qfac = niftiHeader.pixdim[0] === 0.0 ? 1 : niftiHeader.pixdim[0]
+    var a = Math.sqrt(Math.max(0.0,1.0-(niftiHeader.quatern_b*niftiHeader.quatern_b + niftiHeader.quatern_c*niftiHeader.quatern_c + niftiHeader.quatern_d*niftiHeader.quatern_d)))
+    var b = niftiHeader.quatern_b
+    var c = niftiHeader.quatern_c
+    var d = niftiHeader.quatern_d
     ret.spaceDirections = [
-      [pixdim[1]*(a*a+b*b-c*c-d*d),pixdim[1]*(2*b*c+2*a*d),pixdim[1]*(2*b*d-2*a*c)],
-      [pixdim[2]*(2*b*c-2*a*d),pixdim[2]*(a*a+c*c-b*b-d*d),pixdim[2]*(2*c*d+2*a*b)],
-      [qfac*pixdim[3]*(2*b*d+2*a*c),qfac*pixdim[3]*(2*c*d-2*a*b),qfac*pixdim[3]*(a*a+d*d-c*c-b*b)]]
-    ret.spaceOrigin = [qoffset_x,qoffset_y,qoffset_z]
+      [niftiHeader.pixdim[1]*(a*a+b*b-c*c-d*d),niftiHeader.pixdim[1]*(2*b*c+2*a*d),niftiHeader.pixdim[1]*(2*b*d-2*a*c)],
+      [niftiHeader.pixdim[2]*(2*b*c-2*a*d),niftiHeader.pixdim[2]*(a*a+c*c-b*b-d*d),niftiHeader.pixdim[2]*(2*c*d+2*a*b)],
+      [qfac*niftiHeader.pixdim[3]*(2*b*d+2*a*c),qfac*niftiHeader.pixdim[3]*(2*c*d-2*a*b),qfac*niftiHeader.pixdim[3]*(a*a+d*d-c*c-b*b)]]
+    ret.spaceOrigin = [niftiHeader.qoffset_x,niftiHeader.qoffset_y,niftiHeader.qoffset_z]
   } else {
-    console.warn("Invalid qform_code: " + qform_code + ", orientation is probably messed up.")
+    console.warn("Invalid qform_code: " + niftiHeader.qform_code + ", orientation is probably messed up.")
   }
   // TODO: Here we run into trouble, because in NRRD we cannot expose two DIFFERENT (not complementary, different!) transformations. Even more frustrating is that sform transformations are actually more compatible with NRRD than the qform methods.
-  if (sform_code > 0) {
+  if (niftiHeader.sform_code > 0) {
     console.warn("sform transformation are currently ignored.")
   }
-  /*if (sform_code > 0) { // "method 3"
+  /*if (niftiHeader.sform_code > 0) { // "method 3"
     ret.space = "right-anterior-superior" // Any method for orientation (except for "method 1") uses this, apparently.
     ret.spaceDirections = [
-      [srow[0*4 + 0],srow[1*4 + 0],srow[2*4 + 0]],
-      [srow[0*4 + 1],srow[1*4 + 1],srow[2*4 + 1]],
-      [srow[0*4 + 2],srow[1*4 + 2],srow[2*4 + 2]]]
-    ret.spaceOrigin = [srow[0*4 + 3],srow[1*4 + 3],srow[2*4 + 3]]
+      [niftiHeader.srow[0*4 + 0],niftiHeader.srow[1*4 + 0],niftiHeader.srow[2*4 + 0]],
+      [niftiHeader.srow[0*4 + 1],niftiHeader.srow[1*4 + 1],niftiHeader.srow[2*4 + 1]],
+      [niftiHeader.srow[0*4 + 2],niftiHeader.srow[1*4 + 2],niftiHeader.srow[2*4 + 2]]]
+    ret.spaceOrigin = [niftiHeader.srow[0*4 + 3],niftiHeader.srow[1*4 + 3],niftiHeader.srow[2*4 + 3]]
   }*/
   // TODO: Enforce that spaceDirections and so on have the correct size.
   
   // TODO: We're still missing an awful lot of info!
   
+  return ret
+}
+
+// Just parses the header
+// This expects an ArrayBuffer or (Node.js) Buffer
+module.exports.parseHeader = function (buffer_org) {
+  var niftiHeader = parseNIfTIHeader(buffer_org)
+  var ret = NIfTIToNRRD(niftiHeader)
+  return ret
+}
+
+// Parses both header and data
+// This expects an ArrayBuffer or (Node.js) Buffer
+module.exports.parse = function (buffer_org) {
+  var niftiHeader = parseNIfTIHeader(buffer_org)
+  var ret = NIfTIToNRRD(niftiHeader)
+
+  if (niftiHeader.extension[0] !== 0) {
+    console.warn("Looks like there are extensions in use in this NIfTI file, which will all be ignored!")
+  }
+  
   // Read data if it is here
-  if (magic === "n+1\0") {
-    if (vox_offset<352 || vox_offset>buffer.byteLength) {
+  if (niftiHeader.magic === "n+1\0") {
+    var buf8 = new Uint8Array(buffer_org)
+    var buffer = buf8.buffer // Make sure we have an ArrayBuffer
+    if (niftiHeader.vox_offset<352 || niftiHeader.vox_offset>buffer.byteLength) {
       throw new Error("Illegal vox_offset!")
     }
-    ret.buffer = buffer.slice(Math.floor(vox_offset))
-    if (datatype !== 0) {
+    ret.buffer = buffer.slice(Math.floor(niftiHeader.vox_offset))
+    if (niftiHeader.datatype !== 0) {
       // TODO: It MIGHT make sense to equate DT_UNKNOWN (0) to 'block', with bitpix giving the block size in bits
-      ret.data = parseNIfTIRawData(ret.buffer, datatype, dim, {endianFlag: littleEndian})
+      ret.data = parseNIfTIRawData(ret.buffer, niftiHeader.datatype, niftiHeader.dim, {endianFlag: niftiHeader.littleEndian})
     }
   }
   

@@ -1,25 +1,29 @@
 {
   "name": "nifti-js",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "NIfTI support for Javascript",
   "main": "nifti.js",
   "scripts": {
-    "test": "node test/test.js"
+    "test": "tape test/*.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jaspervdg/nifti-js.git"
+    "url": "https://github.com/scijs/nifti-js.git"
   },
+  "keywords": [
+    "scijs",
+    "nifti"
+  ],
   "author": "Jasper van de Gronde",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/jaspervdg/nifti-js/issues"
+    "url": "https://github.com/scijs/nifti-js/issues"
   },
-  "homepage": "https://github.com/jaspervdg/nifti-js",
+  "homepage": "https://github.com/scijs/nifti-js",
   "devDependencies": {
-    "tape": "^2.12.3"
+    "tape": "^4.2.2"
   },
   "optionalDependencies": {
-    "yargs": "^1.2.1"
+    "yargs": "^3.29.0"
   }
 }
