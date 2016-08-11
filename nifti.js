@@ -146,6 +146,7 @@ function NIfTIToNRRD(niftiHeader) {
   ret.encoding = 'raw'
   ret.endian = niftiHeader.littleEndian ? 'little' : 'big'
   ret.sizes = niftiHeader.dim.slice(1) // Note that both NRRD and NIfTI use the convention that the fastest axis comes first!
+  ret.thicknesses=niftiHeader.pixdim.slice(1);
 
   if (niftiHeader.xyzt_units !== undefined) {
     ret.spaceUnits = niftiHeader.xyzt_units
