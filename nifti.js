@@ -269,9 +269,15 @@ function parseNIfTIRawData(buffer, type, dim, options) {
     case "float":
       checkSize(4)
       return new Float32Array(buffer.slice(0,totalLen*4))
+    case "complex64":
+      checkSize(8)
+      return new Float64Array(buffer.slice(0,totalLen*8))
     case "double":
       checkSize(8)
       return new Float64Array(buffer.slice(0,totalLen*8))
+    case "complex128":
+      checkSize(16)
+      return new Float64Array(buffer.slice(0,totalLen*16))
     default:
       console.warn("Unsupported NIfTI type: " + type)
       return undefined
