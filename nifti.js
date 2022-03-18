@@ -1,5 +1,4 @@
 "use strict"
-var assert = require('assert')
 
 var systemEndianness = (function() {
     var buf = new ArrayBuffer(4),
